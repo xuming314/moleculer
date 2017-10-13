@@ -8,8 +8,9 @@
 
 module.exports = {
 	Base: require("./base"),
-	JSON: require("./json"),
 	Avro: require("./avro"),
+	Compactr: require("./compactr"),
+	JSON: require("./json"),
 	MsgPack: require("./msgpack"),
 	ProtoBuf: require("./protobuf")
 };

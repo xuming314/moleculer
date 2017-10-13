@@ -1,7 +1,7 @@
+/* eslint-disable no-console */
 "use strict";
 
 const ServiceBroker = require("../../src/service-broker");
-const FakeTransporter = require("../../src/transporters/fake");
 const Context = require("../../src/context");
 const Serializers = require("../../src/serializers");
 const P = require("../../src/packets");
@@ -16,7 +16,7 @@ let dataFiles = ["10", "150", "1k", "10k", "50k", "100k", "1M"];
 function createBrokers(Serializer, opts) {
 	const broker = new ServiceBroker({
 		nodeID: "node-1",
-		transporter: new FakeTransporter(),
+		transporter: "fake",
 		serializer: new Serializer(opts)
 	});
 
@@ -32,26 +32,32 @@ function runTest(dataName) {
 	let brokerAvro = createBrokers(Serializers.Avro);
 	let brokerMsgPack = createBrokers(Serializers.MsgPack);
 	let brokerProtoBuf = createBrokers(Serializers.ProtoBuf);
+	let brokerCompactr = createBrokers(Serializers.Compactr);
 
 	let bench1 = benchmark.createSuite(`Serialize event packet with ${dataName}bytes`);
 
 	bench1.ref("JSON", () => {
-		const packet = new P.PacketEvent(brokerJSON.transit, "user.created", payload);
+		const packet = new P.PacketEvent(brokerJSON.transit, "node-2-12345", "user.created", payload);
 		return packet.serialize();
 	});
 
 	bench1.add("Avro", () => {
-		const packet = new P.PacketEvent(brokerAvro.transit, "user.created", payload);
+		const packet = new P.PacketEvent(brokerAvro.transit, "node-2-12345", "user.created", payload);
 		return packet.serialize();
 	});
-	
+
 	bench1.add("MsgPack", () => {
-		const packet = new P.PacketEvent(brokerMsgPack.transit, "user.created", payload);
+		const packet = new P.PacketEvent(brokerMsgPack.transit, "node-2-12345", "user.created", payload);
 		return packet.serialize();
 	});
-	
+
 	bench1.add("ProtoBuf", () => {
-		const packet = new P.PacketEvent(brokerProtoBuf.transit, "user.created", payload);
+		const packet = new P.PacketEvent(brokerProtoBuf.transit, "node-2-12345", "user.created", payload);
+		return packet.serialize();
+	});
+
+	bench1.add("Compactr", () => {
+		const packet = new P.PacketEvent(brokerCompactr.transit, "node-2-12345", "user.created", payload);
 		return packet.serialize();
 	});
 
@@ -69,6 +75,7 @@ function runTest(dataName) {
 	console.log("Avro length:", (new P.PacketRequest(brokerAvro.transit, "node-2-12345", ctx)).serialize().length);
 	console.log("MsgPack length:", (new P.PacketRequest(brokerMsgPack.transit, "node-2-12345", ctx)).serialize().length);
 	console.log("ProtoBuf length:", (new P.PacketRequest(brokerProtoBuf.transit, "node-2-12345", ctx)).serialize().length);
+	console.log("Compactr length:", (new P.PacketRequest(brokerCompactr.transit, "node-2-12345", ctx)).serialize().length);
 
 	bench2.ref("JSON", () => {
 		const packet = new P.PacketRequest(brokerJSON.transit, "node-2-12345", ctx);
@@ -79,14 +86,19 @@ function runTest(dataName) {
 		const packet = new P.PacketRequest(brokerAvro.transit, "node-2-12345", ctx);
 		return packet.serialize();
 	});
-	
+
 	bench2.add("MsgPack", () => {
 		const packet = new P.PacketRequest(brokerMsgPack.transit, "node-2-12345", ctx);
 		return packet.serialize();
 	});
-	
+
 	bench2.add("ProtoBuf", () => {
 		const packet = new P.PacketRequest(brokerProtoBuf.transit, "node-2-12345", ctx);
+		return packet.serialize();
+	});
+
+	bench2.add("Compactr", () => {
+		const packet = new P.PacketRequest(brokerCompactr.transit, "node-2-12345", ctx);
 		return packet.serialize();
 	});
 
@@ -96,7 +108,7 @@ function runTest(dataName) {
 			if (dataFiles.length > 0)
 				return runTest(dataFiles.shift());
 		});
-	
+
 }
 
 runTest(dataFiles.shift());
