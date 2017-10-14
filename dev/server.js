@@ -12,7 +12,7 @@ let broker = new ServiceBroker({
 	nodeID: process.argv[2] || "server-" + process.pid,
 	transporter: "TCP",
 	//transporter: "amqp://192.168.0.181:5672",
-	//serializer: "ProtoBuf",
+	serializer: "ProtoBuf",
 
 	//disableBalancer: true,
 
@@ -32,7 +32,7 @@ broker.createService({
 			//if (_.random(100) > 90)
 			//	return this.Promise.reject(new MoleculerError("Random error!", 510));
 
-			return this.Promise.resolve().delay(wait).then(() => ({
+			return this.Promise.resolve()/*.delay(wait)*/.then(() => ({
 				count: ctx.params.count,
 				res: Number(ctx.params.a) + Number(ctx.params.b)
 			}));

@@ -12,11 +12,11 @@ const Promise		= require("bluebird");
 const Transporter 	= require("./base");
 
 const P 			= require("../packets");
-const C				= require("./constants");
+const C				= require("./tcp/constants");
 
-const Message		= require("./message");
-const UdpServer		= require("./udp-server");
-const TcpServer		= require("./tcp-server");
+const Message		= require("./tcp/message");
+const UdpServer		= require("./tcp/udp-server");
+const TcpServer		= require("./tcp/tcp-server");
 
 /**
  * Transporter for TCP+UDP communication
@@ -39,7 +39,7 @@ class TcpTransporter extends Transporter {
 			udpAddress: "0.0.0.0",
 			udpPort: 60220,
 			udpReuseAddr: true,
-			udpBroadcastAddress: "255.255.255.0",
+			udpBroadcastAddress: "255.255.255.255",
 
 			tcpPort: null, // random port
 			timeout: 10 * 1000,
@@ -76,17 +76,18 @@ class TcpTransporter extends Transporter {
 
 		this.udpServer.on("message", (message, rinfo) => {
 
-			const sender = message.getFrame(C.MSG_FRAME_NODEID);
-			if (sender && sender.toString() != this.nodeID) {
-				let nodeID = sender.toString();
+			const nodeID = message.getFrameData(C.MSG_FRAME_NODEID).toString();
+			if (nodeID && nodeID != this.nodeID) {
 				let socket = this.connections[nodeID];
 
 				if (!socket) {
-					const port = parseInt(message.getFrame(C.MSG_FRAME_PORT).toString(), 10);
+					const port = parseInt(message.getFrameData(C.MSG_FRAME_PORT).toString(), 10);
 					TcpServer.connect(rinfo.address, port)
 						.then(socket => {
 							socket.nodeID = nodeID;
 							this.connections[nodeID] = socket;
+
+							this.onTcpClientConnected(socket);
 
 							// Send DISCOVER to this node
 							const packet = new P.PacketDiscover(this.transit, nodeID);
@@ -120,23 +121,25 @@ class TcpTransporter extends Transporter {
 		socket.setNoDelay();
 
 		const address = socket.address().address;
-		this.logger.info(address);
+		//this.logger.info(address);
 		this.logger.info(`TCP client '${address}' is connected.`);
 
 		socket.on("data", msg => {
-			this.logger.info(`TCP client '${address}' data received.`);
-			this.logger.info(msg.toString());
+			//this.logger.info(`TCP client '${address}' data received.`);
+			//this.logger.info(msg.toString());
 
 			try {
 				const message = Message.fromBuffer(msg);
-				const nodeID = message.getFrame(C.MSG_FRAME_NODEID);
+				const nodeID = message.getFrameData(C.MSG_FRAME_NODEID).toString();
+				if (!nodeID)
+					throw new Error("Missing nodeID!");
 
 				socket.nodeID = nodeID;
 				if (!this.connections[nodeID])
 					this.connections[nodeID] = socket;
 
-				const packetType = message.getFrame(C.MSG_FRAME_PACKETTYPE);
-				const packetData = message.getFrame(C.MSG_FRAME_PACKETDATA);
+				const packetType = message.getFrameData(C.MSG_FRAME_PACKETTYPE);
+				const packetData = message.getFrameData(C.MSG_FRAME_PACKETDATA);
 				if (!packetType || !packetData)
 					throw new Error("Missing frames!");
 
@@ -149,14 +152,12 @@ class TcpTransporter extends Transporter {
 
 		socket.on("error", err => {
 			this.logger.warn(`TCP client '${address}' error!`, err);
-		});
-
-		socket.on("end", () => {
-			this.logger.info(`TCP client '${address}' disconnected!`);
+			this.removeSocket(socket);
 		});
 
 		socket.on("close", hadError => {
 			this.logger.info(`TCP client '${address}' is disconnected! Had error:`, hadError);
+			this.removeSocket(socket);
 		});
 	}
 
@@ -233,11 +234,11 @@ class TcpTransporter extends Transporter {
 				if (socket) {
 
 					socket.write(payload, () => {
-						this.logger.info(`${packet.type} packet sent to ${target}.`);
+						//this.logger.info(`${packet.type} packet sent to ${target}.`);
 						resolve();
 					});
 				} else {
-					this.logger.error("No live socket to ${target}!");
+					this.logger.warn(`No live socket to ${target}!`);
 					resolve();
 				}
 			} else {
@@ -248,7 +249,7 @@ class TcpTransporter extends Transporter {
 				Promise.all(Object.keys(this.connections).map(nodeID => {
 					const socket = this.connections[nodeID];
 					socket.write(payload, () => {
-						this.logger.info(`${packet.type} packet sent to ${target}.`);
+						//this.logger.info(`${packet.type} packet sent to ${target}.`);
 						return Promise.resolve();
 					});
 				})).then(resolve);

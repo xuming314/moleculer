@@ -10,10 +10,6 @@ const net 			= require("net");
 const EventEmitter 	= require("events");
 const Promise		= require("bluebird");
 
-const Message		= require("./message");
-
-const { MSG_FRAME_NODEID, MSG_FRAME_PORT } = require("./constants");
-
 /**
  * TCP Server for TcpTransporter
  *
@@ -72,8 +68,6 @@ class TcpServer extends EventEmitter {
 	static connect(host, port) {
 		return new Promise((resolve, reject) => {
 			const socket = net.connect({ host, port }, () => resolve(socket));
-
-			socket.setNoDelay();
 
 			socket.on("error", err => {
 				reject(err);

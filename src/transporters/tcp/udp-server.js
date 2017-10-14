@@ -52,7 +52,7 @@ class UdpServer extends EventEmitter {
 	bind() {
 		return new Promise((resolve, reject) => {
 
-			const server = dgram.createSocket({type: "udp4", reuseAddr: this.opts.reuseAddr });
+			const server = dgram.createSocket({type: "udp4", reuseAddr: this.opts.udpReuseAddr });
 
 			server.on("message", this.onMessage.bind(this));
 
@@ -64,7 +64,9 @@ class UdpServer extends EventEmitter {
 			server.bind(this.opts.udpPort, this.opts.udpAddress, () => {
 				this.logger.info(`UDP server is listening on ${this.opts.udpAddress}:${this.opts.udpPort}`);
 				server.setBroadcast(true);
+				this.startDiscovering();
 				resolve();
+				this.discover();
 			});
 
 			this.server = server;
@@ -79,14 +81,14 @@ class UdpServer extends EventEmitter {
 	discover() {
 		const message = new Message();
 		message.addFrame(MSG_FRAME_NODEID, this.nodeIDBuffer);
-		message.addFrame(MSG_FRAME_PORT, this.discoverTcpPort);
+		message.addFrame(MSG_FRAME_PORT, "" + this.opts.tcpPort);
 
 		this.server.send(message.toBuffer(), this.opts.udpPort, this.opts.udpBroadcastAddress, (err, bytes) => {
 			if (err) {
 				this.logger.warn("Discover packet broadcast error.", err);
 				return;
 			}
-			this.logger.info(`Discover packet sent. Size: ${bytes}`);
+			//this.logger.info(`Discover packet sent. Size: ${bytes}`);
 		});
 	}
 
@@ -99,8 +101,8 @@ class UdpServer extends EventEmitter {
 	 * @memberof UdpServer
 	 */
 	onMessage(msg, rinfo) {
-		this.logger.info(`UDP message received from ${rinfo.address}. Size: ${rinfo.size}`);
-		this.logger.info(msg.toString());
+		//this.logger.info(`UDP message received from ${rinfo.address}. Size: ${rinfo.size}`);
+		//this.logger.info(msg.toString());
 
 		try {
 			const message = Message.fromBuffer(msg);
@@ -116,7 +118,8 @@ class UdpServer extends EventEmitter {
 	 * @memberof UdpServer
 	 */
 	startDiscovering() {
-		this.discoverTimer = setInterval(() => this.discover(), 5 * 1000);
+		if (!this.discoverTimer)
+			this.discoverTimer = setInterval(() => this.discover(), 5 * 1000);
 	}
 
 	/**

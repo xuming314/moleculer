@@ -81,7 +81,12 @@ class Message {
 	 * @memberof Message
 	 */
 	addFrame(type, data) {
-		this.frames.push([type, data.length, data]);
+		if (Buffer.isBuffer(data))
+			this.frames.push([type, data.length, data]);
+		else {
+			const buf = Buffer.from(data);
+			this.frames.push([type, buf.length, buf]);
+		}
 	}
 
 	/**
@@ -93,6 +98,12 @@ class Message {
 	 */
 	getFrame(type) {
 		return this.frames.find(frame => type == frame[0]);
+	}
+
+	getFrameData(type) {
+		const frame = this.getFrame(type);
+		if (frame)
+			return frame[2];
 	}
 
 	/**

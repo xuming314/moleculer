@@ -14,20 +14,20 @@ let broker = new ServiceBroker({
 	nodeID: process.argv[2] || "client-" + process.pid,
 	transporter: "TCP",
 	//transporter: "amqp://192.168.0.181:5672",
-	//serializer: "ProtoBuf",
+	serializer: "ProtoBuf",
 	//requestTimeout: 1000,
 
 	//disableBalancer: true,
 
 	metrics: true,
 
-	transit: {
+	/*transit: {
 		maxQueueSize: 10
 	},
 
 	registry: {
 		strategy: Strategies.Random
-	},
+	},*/
 
 	circuitBreaker: {
 		enabled: true,
