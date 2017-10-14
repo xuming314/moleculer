@@ -7,15 +7,19 @@
 "use strict";
 
 const net 			= require("net");
-const dgram 		= require("dgram");
 
 const Promise		= require("bluebird");
 const Transporter 	= require("./base");
 
 const P 			= require("../packets");
+const C				= require("./constants");
+
+const Message		= require("./message");
+const UdpServer		= require("./udp-server");
+const TcpServer		= require("./tcp-server");
 
 /**
- * Transporter for TCP & UDP communication
+ * Transporter for TCP+UDP communication
  *
  * @class TcpTransporter
  * @extends {Transporter}
@@ -35,7 +39,10 @@ class TcpTransporter extends Transporter {
 			udpAddress: "0.0.0.0",
 			udpPort: 60220,
 			udpReuseAddr: true,
-			tcpPort: null // random
+			udpBroadcastAddress: "255.255.255.0",
+
+			tcpPort: null, // random port
+			timeout: 10 * 1000,
 		}, this.opts);
 
 		this.connections = {};
@@ -47,119 +54,71 @@ class TcpTransporter extends Transporter {
 	 * @memberOf TcpTransporter
 	 */
 	connect() {
-		return new Promise((resolve, reject) => {
-			this.server = net.createServer(this.onClientConnected.bind(this));
-			this.server.on("error", err => {
-				this.logger.error("Server error.", err);
-				reject(err);
-			});
-
-			this.server.listen(this.opts.tcpPort, () => {
-				this.port = this.server.address().port;
-				this.logger.info(`TCP server is listening on ${this.port}.`);
+		return Promise.resolve()
+			.then(() => this.startTcpServer())
+			.then(() => this.startUdpServer())
+			.then(() => {
+				this.logger.info("Transporter connected.");
 				this.connected = true;
-
-				return this.startUdpServer()
-					.then(() => {
-						this.logger.info("Transporter connected.");
-						this.onConnected().then(resolve);
-					});
+				return this.onConnected();
 			});
+	}
 
-		});
+	startTcpServer() {
+		this.tcpServer = new TcpServer(this, this.opts);
+		this.tcpServer.on("connect", this.onTcpClientConnected.bind(this));
+
+		return this.tcpServer.listen();
 	}
 
 	startUdpServer() {
-		return new Promise((resolve, reject) => {
+		this.udpServer = new UdpServer(this, this.opts);
 
-			this.udpServer = dgram.createSocket({type: "udp4", reuseAddr: this.opts.udpReuseAddr });
+		this.udpServer.on("message", (message, rinfo) => {
 
-			this.udpServer.on("message", (msg, rinfo) => {
-				this.logger.info(`UDP message received from ${rinfo.address}. Size: ${rinfo.size}`);
-				this.logger.info(msg.toString());
-				const wrapPacket = JSON.parse(msg);
+			const sender = message.getFrame(C.MSG_FRAME_NODEID);
+			if (sender && sender.toString() != this.nodeID) {
+				let nodeID = sender.toString();
+				let socket = this.connections[nodeID];
 
-				if (wrapPacket.nodeID == this.broker.nodeID)
-					return;
+				if (!socket) {
+					const port = parseInt(message.getFrame(C.MSG_FRAME_PORT).toString(), 10);
+					TcpServer.connect(rinfo.address, port)
+						.then(socket => {
+							socket.nodeID = nodeID;
+							this.connections[nodeID] = socket;
 
-				this.establishConnection(wrapPacket.nodeID, rinfo.address, wrapPacket.port)
-					.then(() => {
-						this.messageHandler(P.PACKET_DISCOVER, wrapPacket.packet);
-					})
-					.catch(err => {
-						this.logger.warn(`Can't establish connection with ${wrapPacket.nodeID} on ${rinfo.address}:${wrapPacket.port}!`, err);
-					});
-			});
-
-			this.udpServer.on("error", err => {
-				this.logger.error("UDP server error!", err);
-				reject(err);
-			});
-
-			this.udpServer.bind(this.opts.udpPort, this.opts.udpAddress, () => {
-				this.logger.info(`UDP server is listening on ${this.opts.udpAddress}:${this.opts.udpPort}`);
-				this.udpServer.setBroadcast(true);
-				resolve();
-			});
-		});
-	}
-
-
-	establishConnection(nodeID, host, port) {
-		if (nodeID == this.broker.nodeID)
-			return Promise.resolve();
-
-		let socket = this.connections[nodeID];
-		if (socket)
-			return Promise.resolve(socket);
-
-		const connect = cb => {
-			const reconnect = () => {
-				setTimeout(() => connect(cb), 1000);
-			};
-
-			socket = net.connect({ host, port }, () => {
-				this.logger.info(`Connected to ${nodeID}!`);
-				this.connections[nodeID] = socket;
-				cb(null, socket);
-			});
-
-			socket.on("data", msg => {
-				this.logger.info("Incoming client data:");
-				this.logger.info(msg.toString());
-
-				const wrapPacket = JSON.parse(msg);
-
-				this.messageHandler(wrapPacket.cmd, wrapPacket.packet);
-			});
-
-			socket.on("end", () => {
-				this.logger.info("Socket disconnected!");
-				reconnect();
-			});
-
-			socket.on("error", err => {
-				if (err.code == "ECONNREFUSED" || err.code == "ECONNRESET") {
-					this.logger.info("Socket not available!");
-				} else {
-					this.logger.warn("Socket client socket error!", err);
+							// Send DISCOVER to this node
+							const packet = new P.PacketDiscover(this.transit, nodeID);
+							this.publish(packet);
+						})
+						.catch(err => {
+							this.logger.warn(`Can't connect to '${nodeID}' on ${rinfo.address}:${port}`, err);
+						});
 				}
-				reconnect();
-			});
-
-			socket.unref();
-		};
-
-		return new Promise((resolve, reject) => {
-			connect((err, socket) => {
-				if (err)
-					return reject(err);
-				resolve(socket);
-			});
+			}
 		});
+
+		this.udpServer.on("message error", (err, msg, rinfo) => {
+			this.logger.warn("Invalid UDP packet received!", msg.toString(), rinfo);
+		});
+
+		return this.udpServer.bind();
 	}
 
-	onClientConnected(socket) {
+	/**
+	 * New TCP socket client is received via TcpServer.
+	 * It happens if we broadcast a DISCOVER packet via UDP
+	 * and other nodes catch it and connect to our TCP server.
+	 * At this point we don't know the socket nodeID. We should
+	 * wait for the FIRST DISCOVER packet and expand the NodeID from it.
+	 *
+	 * @param {Socket} socket
+	 * @memberof TcpTransporter
+	 */
+	onTcpClientConnected(socket) {
+		socket.setNoDelay();
+
 		const address = socket.address().address;
 		this.logger.info(address);
 		this.logger.info(`TCP client '${address}' is connected.`);
@@ -168,17 +127,32 @@ class TcpTransporter extends Transporter {
 			this.logger.info(`TCP client '${address}' data received.`);
 			this.logger.info(msg.toString());
 
-			const wrapPacket = JSON.parse(msg);
+			try {
+				const message = Message.fromBuffer(msg);
+				const nodeID = message.getFrame(C.MSG_FRAME_NODEID);
 
-			if (!this.connections[wrapPacket.nodeID])
-				this.connections[wrapPacket.nodeID] = socket;
+				socket.nodeID = nodeID;
+				if (!this.connections[nodeID])
+					this.connections[nodeID] = socket;
 
-			this.messageHandler(wrapPacket.cmd, wrapPacket.packet);
+				const packetType = message.getFrame(C.MSG_FRAME_PACKETTYPE);
+				const packetData = message.getFrame(C.MSG_FRAME_PACKETDATA);
+				if (!packetType || !packetData)
+					throw new Error("Missing frames!");
+
+				this.messageHandler(packetType.toString(), packetData);
+
+			} catch(err) {
+				this.logger.warn("Invalid TCP message received.", msg.toString(), err);
+			}
 		});
 
 		socket.on("error", err => {
-			if (err.code !== "ECONNRESET")
-				this.logger.warn(`TCP client '${address}' error!`, err);
+			this.logger.warn(`TCP client '${address}' error!`, err);
+		});
+
+		socket.on("end", () => {
+			this.logger.info(`TCP client '${address}' disconnected!`);
 		});
 
 		socket.on("close", hadError => {
@@ -187,17 +161,37 @@ class TcpTransporter extends Transporter {
 	}
 
 	/**
-	 * Disconnect from the server
+	 * Close TCP & UDP servers and destroy sockets.
 	 *
 	 * @memberOf TcpTransporter
 	 */
 	disconnect() {
+		Object.keys(this.connections).forEach(nodeID => {
+			const socket = this.connections[nodeID];
+			if (!socket.destroyed)
+				socket.destroy();
+		});
+
 		this.connected = false;
-		if (this.server)
-			this.server.close();
+		if (this.TcpServer)
+			this.TcpServer.close();
 
 		if (this.udpServer)
 			this.udpServer.close();
+	}
+
+	/**
+	 * Remove a socket from connections
+	 *
+	 * @param {any} socket
+	 * @memberof TcpTransporter
+	 */
+	removeSocket(socket) {
+		if (!socket.destroyed)
+			socket.destroy();
+
+		if (socket.nodeID)
+			delete this.connections[socket.nodeID];
 	}
 
 	/**
@@ -220,62 +214,46 @@ class TcpTransporter extends Transporter {
 	 * @memberOf TcpTransporter
 	 */
 	publish(packet) {
+		if (packet.type == P.PACKET_DISCOVER && !packet.target)
+			return Promise.resolve();
+
 		const data = packet.serialize();
 
 		return new Promise((resolve, reject) => {
-			if (packet.type == P.PACKET_DISCOVER) {
-				const wrapPacket = {
-					ver: 1,
-					nodeID: this.broker.nodeID,
-					cmd: packet.type,
-					port: this.port,
-					packet: data
-				};
-				this.udpServer.send(JSON.stringify(wrapPacket), this.opts.udpPort, "255.255.255.255", (err, bytes) => {
-					if (err) {
-						this.logger.warn("Discover packet broadcast error.", err);
-						return reject(err);
-					}
-					this.logger.info(`${packet.type} packet sent. Size: ${bytes}`);
-					resolve();
-				});
-			} else {
-				const wrapPacket = {
-					ver: 1,
-					nodeID: this.broker.nodeID,
-					cmd: packet.type,
-					packet: data
-				};
 
-				const target = packet.target;
-				if (target) {
-					const socket = this.connections[target];
+			const message = new Message();
+			message.addFrame(C.MSG_FRAME_NODEID, this.nodeID);
+			message.addFrame(C.MSG_FRAME_PACKETTYPE, packet.type);
+			message.addFrame(C.MSG_FRAME_PACKETDATA, data);
+			const payload = message.toBuffer();
 
-					if (socket) {
-						socket.write(JSON.stringify(wrapPacket), () => {
-							this.logger.info(`${packet.type} packet sent to ${target}.`);
-							resolve();
-						});
-					} else {
-						this.logger.error("No live socket to ${target}!");
+			const target = packet.target;
+			if (target) {
+				const socket = this.connections[target];
+				if (socket) {
+
+					socket.write(payload, () => {
+						this.logger.info(`${packet.type} packet sent to ${target}.`);
 						resolve();
-					}
+					});
 				} else {
-					if (Object.keys(this.connections) == 0)
-						return resolve();
-
-					const data = JSON.stringify(wrapPacket);
-					// TCP broadcast
-					Promise.all(Object.keys(this.connections).map(nodeID => {
-						const socket = this.connections[nodeID];
-						socket.write(data, () => {
-							this.logger.info(`${packet.type} packet sent to ${target}.`);
-							return Promise.resolve();
-						});
-					})).then(resolve);
+					this.logger.error("No live socket to ${target}!");
+					resolve();
 				}
+			} else {
+				if (Object.keys(this.connections) == 0)
+					return resolve();
 
+				// TCP broadcast
+				Promise.all(Object.keys(this.connections).map(nodeID => {
+					const socket = this.connections[nodeID];
+					socket.write(payload, () => {
+						this.logger.info(`${packet.type} packet sent to ${target}.`);
+						return Promise.resolve();
+					});
+				})).then(resolve);
 			}
+
 		});
 	}
 

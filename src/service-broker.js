@@ -189,7 +189,9 @@ class ServiceBroker {
 		// Graceful exit
 		this._closeFn = () => {
 			/* istanbul ignore next */
-			this.stop().then(() => process.exit(0));
+			this.stop()
+				.catch(err => this.logger.error(err))
+				.then(() => process.exit(0));
 		};
 
 		process.setMaxListeners(0);
