@@ -7,6 +7,12 @@
 		{
 			"type": "node",
 			"request": "launch",
+			"name": "Launch Program",
+			"program": "${workspaceFolder}/src/transporters/tcp/perf-consumer.js"
+		},
+		{
+			"type": "node",
+			"request": "launch",
 			"name": "Launch dev",
 			"program": "${workspaceRoot}\\dev\\client.js",
 			"cwd": "${workspaceRoot}",

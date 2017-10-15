@@ -6,8 +6,6 @@
 
 "use strict";
 
-const net 			= require("net");
-
 const Promise		= require("bluebird");
 const Transporter 	= require("./base");
 
@@ -41,8 +39,7 @@ class TcpTransporter extends Transporter {
 			udpReuseAddr: true,
 			udpBroadcastAddress: "255.255.255.255",
 
-			tcpPort: null, // random port
-			timeout: 10 * 1000,
+			tcpPort: null // random port
 		}, this.opts);
 
 		this.connections = {};
@@ -75,7 +72,6 @@ class TcpTransporter extends Transporter {
 		this.udpServer = new UdpServer(this, this.opts);
 
 		this.udpServer.on("message", (message, rinfo) => {
-
 			const nodeID = message.getFrameData(C.MSG_FRAME_NODEID).toString();
 			if (nodeID && nodeID != this.nodeID) {
 				let socket = this.connections[nodeID];
@@ -124,30 +120,31 @@ class TcpTransporter extends Transporter {
 		//this.logger.info(address);
 		this.logger.info(`TCP client '${address}' is connected.`);
 
-		socket.on("data", msg => {
+		const parser = Message.getParser();
+		socket.pipe(parser);
+
+		parser.on("data", message => {
 			//this.logger.info(`TCP client '${address}' data received.`);
 			//this.logger.info(msg.toString());
 
-			try {
-				const message = Message.fromBuffer(msg);
-				const nodeID = message.getFrameData(C.MSG_FRAME_NODEID).toString();
-				if (!nodeID)
-					throw new Error("Missing nodeID!");
+			const nodeID = message.getFrameData(C.MSG_FRAME_NODEID).toString();
+			if (!nodeID)
+				this.logger.warn("Missing nodeID!");
 
-				socket.nodeID = nodeID;
-				if (!this.connections[nodeID])
-					this.connections[nodeID] = socket;
+			socket.nodeID = nodeID;
+			if (!this.connections[nodeID])
+				this.connections[nodeID] = socket;
 
-				const packetType = message.getFrameData(C.MSG_FRAME_PACKETTYPE);
-				const packetData = message.getFrameData(C.MSG_FRAME_PACKETDATA);
-				if (!packetType || !packetData)
-					throw new Error("Missing frames!");
+			const packetType = message.getFrameData(C.MSG_FRAME_PACKETTYPE);
+			const packetData = message.getFrameData(C.MSG_FRAME_PACKETDATA);
+			if (!packetType || !packetData)
+				this.logger.warn("Missing frames!");
 
-				this.messageHandler(packetType.toString(), packetData);
+			this.messageHandler(packetType.toString(), packetData);
+		});
 
-			} catch(err) {
-				this.logger.warn("Invalid TCP message received.", msg.toString(), err);
-			}
+		parser.on("error", err => {
+			this.logger.warn("Packet parser error!", err);
 		});
 
 		socket.on("error", err => {

@@ -6,6 +6,8 @@
 
 "use strict";
 
+const Writable = require("stream").Writable;
+
 /**
  *
  *
@@ -138,6 +140,69 @@ class Message {
 
 		return buf;
 	}
+
+	static getParser() {
+		return new Parser();
+	}
 }
+
+
+class Parser extends Writable {
+
+	constructor(options) {
+		super(options);
+
+		this.buf = null;
+	}
+
+	_write(chunk, encoding, cb) {
+
+		let data = chunk;
+		if (this.buf && this.buf.length > 0) {
+			// There is previous chunk, concatenate them
+			data = Buffer.concat([this.buf, chunk]);
+			this.buf = null;
+		}
+
+		// Find all messages from the chunk
+		while (data.length > 0) {
+
+			if (data.length < 3 + 4) {
+				// Too short, waiting for the next chunk
+				this.buf = Buffer.from(data);
+				return cb();
+			}
+
+			// Check the prefix
+			if (data[0] == 0x4d && data[1] == 0x4f && data[2] == 0x4c) {
+				const msgLen = data.readUInt32BE(3);
+				const length = msgLen + 3 + 4;
+
+				// Th chunk contain a message
+				if (data.length >= length) {
+					const part = data.slice(0, length);
+					let msg = Message.fromBuffer(part);
+
+					this.emit("data", msg);
+
+					data = data.slice(length);
+				} else {
+					// The chunk is not contain the whole message.
+					// Waiting for the next one.
+					this.buf = Buffer.from(data);
+					return cb();
+				}
+
+			} else {
+				// Invalid data. It doesn't start with prefix.
+				cb(new Error("Invalid packet"));
+			}
+		}
+
+		cb();
+	}
+}
+
+Message.Parser = Parser;
 
 module.exports = Message;

@@ -200,85 +200,88 @@ class Transit {
 	 * @memberOf Transit
 	 */
 	messageHandler(cmd, msg) {
+
 		try {
-
-			if (msg == null) {
-				throw new E.MoleculerServerError("Missing packet.", 500, "MISSING_PACKET");
-			}
-
-			this.stat.packets.received = this.stat.packets.received + 1;
-
-			const packet = P.Packet.deserialize(this, cmd, msg);
-			const payload = packet.payload;
-
-			// Check payload
-			if (!payload) {
-				/* istanbul ignore next */
-				throw new E.MoleculerServerError("Missing response payload.", 500, "MISSING_PAYLOAD");
-			}
-
-			// Check protocol version
-			if (payload.ver != P.PROTOCOL_VERSION) {
-				throw new E.ProtocolVersionMismatchError(payload.sender,P.PROTOCOL_VERSION, payload.ver || "1");
-			}
-
-			// Skip own packets (if built-in balancer disabled)
-			if (payload.sender == this.nodeID && (cmd !== P.PACKET_EVENT && cmd !== P.PACKET_REQUEST && cmd !== P.PACKET_RESPONSE))
-				return;
-
-
-			this.logger.debug(`Incoming ${cmd} packet from '${payload.sender}'`);
-
-			// Request
-			if (cmd === P.PACKET_REQUEST) {
-				return this._requestHandler(payload);
-			}
-
-			// Response
-			else if (cmd === P.PACKET_RESPONSE) {
-				this._responseHandler(payload);
-			}
-
-			// Event
-			else if (cmd === P.PACKET_EVENT) {
-				this._eventHandler(payload);
-			}
-
-			// Discover
-			else if (cmd === P.PACKET_DISCOVER) {
-				this.sendNodeInfo(payload.sender);
-			}
-
-			// Node info
-			else if (cmd === P.PACKET_INFO) {
-				this.broker.registry.processNodeInfo(payload);
-			}
-
-			// Disconnect
-			else if (cmd === P.PACKET_DISCONNECT) {
-				this.broker.registry.nodeDisconnected(payload);
-			}
-
-			// Heartbeat
-			else if (cmd === P.PACKET_HEARTBEAT) {
-				this.broker.registry.nodeHeartbeat(payload);
-			}
-
-			// Ping
-			else if (cmd === P.PACKET_PING) {
-				this.sendPong(payload);
-			}
-
-			// Pong
-			else if (cmd === P.PACKET_PONG) {
-				this.processPong(payload);
-			}
-
-			return true;
+			if (msg !== null)
+				return this.processIncomingMessage(cmd, msg);
 		} catch(err) {
 			this.logger.error(err, cmd, msg);
 		}
 		return false;
+	}
+
+	processIncomingMessage(cmd, msg) {
+		this.stat.packets.received = this.stat.packets.received + 1;
+
+		const packet = P.Packet.deserialize(this, cmd, msg);
+		const payload = packet.payload;
+
+		// Check payload
+		if (!payload) {
+			/* istanbul ignore next */
+			this.logger.error(new E.MoleculerServerError("Missing response payload.", 500, "MISSING_PAYLOAD"), cmd, msg);
+			return false;
+		}
+
+		// Check protocol version
+		if (payload.ver != P.PROTOCOL_VERSION) {
+			this.logger.error(new E.ProtocolVersionMismatchError(payload.sender,P.PROTOCOL_VERSION, payload.ver || "1"), cmd, msg);
+			return false;
+		}
+
+		// Skip own packets (if built-in balancer disabled)
+		if (payload.sender == this.nodeID && (cmd !== P.PACKET_EVENT && cmd !== P.PACKET_REQUEST && cmd !== P.PACKET_RESPONSE))
+			return;
+
+
+		this.logger.debug(`Incoming ${cmd} packet from '${payload.sender}'`);
+
+		// Request
+		if (cmd === P.PACKET_REQUEST) {
+			return this._requestHandler(payload);
+		}
+
+		// Response
+		else if (cmd === P.PACKET_RESPONSE) {
+			this._responseHandler(payload);
+		}
+
+		// Event
+		else if (cmd === P.PACKET_EVENT) {
+			this._eventHandler(payload);
+		}
+
+		// Discover
+		else if (cmd === P.PACKET_DISCOVER) {
+			this.sendNodeInfo(payload.sender);
+		}
+
+		// Node info
+		else if (cmd === P.PACKET_INFO) {
+			this.broker.registry.processNodeInfo(payload);
+		}
+
+		// Disconnect
+		else if (cmd === P.PACKET_DISCONNECT) {
+			this.broker.registry.nodeDisconnected(payload);
+		}
+
+		// Heartbeat
+		else if (cmd === P.PACKET_HEARTBEAT) {
+			this.broker.registry.nodeHeartbeat(payload);
+		}
+
+		// Ping
+		else if (cmd === P.PACKET_PING) {
+			this.sendPong(payload);
+		}
+
+		// Pong
+		else if (cmd === P.PACKET_PONG) {
+			this.processPong(payload);
+		}
+
+		return true;
 	}
 
 	/**

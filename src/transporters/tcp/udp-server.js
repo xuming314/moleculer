@@ -104,6 +104,8 @@ class UdpServer extends EventEmitter {
 		//this.logger.info(`UDP message received from ${rinfo.address}. Size: ${rinfo.size}`);
 		//this.logger.info(msg.toString());
 
+		// TODO: Can it get multiple messages?
+
 		try {
 			const message = Message.fromBuffer(msg);
 			this.emit("message", message, rinfo);
