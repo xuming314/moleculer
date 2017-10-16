@@ -9,7 +9,6 @@ const opts = {
 	timeout: 10 * 1000,
 };
 
-let counter = 0;
 let count = 0;
 
 const tx = {
@@ -19,7 +18,8 @@ const tx = {
 
 this.tcpServer = new TcpServer(tx, opts);
 this.tcpServer.on("connect", socket => {
-	socket.setNoDelay();
+	//socket.setNoDelay();
+	let counter = 0;
 
 	let parser = Message.getParser();
 	socket.pipe(parser);
@@ -62,7 +62,7 @@ setTimeout(() => {
 
 	setInterval(() => {
 		let rps = count / ((Date.now() - startTime) / 1000);
-		console.log("RPS:", rps.toLocaleString("hu-HU", {maximumFractionDigits: 0}), "req/s", "Total:", counter.toLocaleString("hu-HU", {maximumFractionDigits: 0}));
+		console.log("RPS:", rps.toLocaleString("en-GB", {maximumFractionDigits: 0}), "req/s"/*, "Total:", counter.toLocaleString("en-GB", {maximumFractionDigits: 0})*/);
 		count = 0;
 		startTime = Date.now();
 	}, 1000);

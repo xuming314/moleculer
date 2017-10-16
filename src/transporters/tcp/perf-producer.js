@@ -18,7 +18,7 @@ function connect() {
 	TcpServer.connect("127.0.0.1", opts.tcpPort)
 		.then(_socket => {
 			socket = _socket;
-			socket.setNoDelay();
+			//socket.setNoDelay();
 
 			socket.on("error", err => {
 				console.warn("TCP client error!", err);
@@ -34,7 +34,7 @@ function connect() {
 
 		})
 		.catch(err => {
-			console.log(`Can't connect to  127.0.0.1:${opts.tcpPort}`, err);
+			console.log(`Can't connect to 127.0.0.1:${opts.tcpPort}`, err);
 			setTimeout(() => connect(), 1000);
 		});
 
@@ -74,7 +74,7 @@ setTimeout(() => {
 
 	setInterval(() => {
 		let rps = count / ((Date.now() - startTime) / 1000);
-		console.log("RPS:", rps.toLocaleString("hu-HU", {maximumFractionDigits: 0}), "req/s");
+		console.log("RPS:", rps.toLocaleString("en-GB", {maximumFractionDigits: 0}), "req/s");
 		count = 0;
 		startTime = Date.now();
 	}, 1000);

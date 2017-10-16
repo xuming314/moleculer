@@ -1,28 +1,23 @@
+/* eslint-disable no-console */
 "use strict";
 
 let ServiceBroker = require("../src/service-broker");
-let Cacher = require("../src/cachers/memory-map");
-let Transporters = require("../src/transporters");
-let Serializer = require("../src/serializers/json");
 
-function createBrokers(Transporter, opts) {
+function createBrokers(transporter, opts) {
 	let b1 = new ServiceBroker({
-		transporter: new Transporter(opts),
+		transporter,
 		//requestTimeout: 0,
 		//logger: console,
 		//logLevel: "debug",
-		serializer: new Serializer(),
 		nodeID: "node-1",
 
 	});
 
 	let b2 = new ServiceBroker({
-		transporter: new Transporter(opts),
-		//cacher: new Cacher(),
+		transporter,
 		//requestTimeout: 0,
 		//logger: console,
 		//logLevel: "debug",
-		serializer: new Serializer(),
 		nodeID: "node-2"
 	});
 
@@ -50,14 +45,13 @@ function createBrokers(Transporter, opts) {
 	return [b1, b2];
 }
 
-let [b1, b2] = createBrokers(Transporters.Fake);
+let [b1, b2] = createBrokers("Fake");
 
 let count = 0;
 function doRequest() {
 	count++;
-	return b2.call("echo.reply", { a: count }).then(res => {
-	//return b2.call("echo.get", { id: 5 }).then(res => {
-		if (count % 10000) {
+	return b1.call("echo.reply", { a: count }).then(res => {
+		if (count % 10 * 1000) {
 			// Fast cycle
 			doRequest();
 		} else {
@@ -76,7 +70,7 @@ setTimeout(() => {
 
 	setInterval(() => {
 		let rps = count / ((Date.now() - startTime) / 1000);
-		console.log("RPS:", rps.toLocaleString("hu-HU", {maximumFractionDigits: 0}), "req/s");
+		console.log("RPS:", rps.toLocaleString("en-GB", {maximumFractionDigits: 0}), "req/s");
 		count = 0;
 		startTime = Date.now();
 	}, 1000);

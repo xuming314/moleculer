@@ -13,7 +13,7 @@ const EventEmitter2 = require("eventemitter2").EventEmitter2;
 
 // Put to global to transfer messages between brokers in the same process
 global.bus = new EventEmitter2({
-	wildcard: true,
+	wildcard: false,
 	maxListeners: 100
 });
 
