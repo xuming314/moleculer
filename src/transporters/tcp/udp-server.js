@@ -12,7 +12,7 @@ const dgram 		= require("dgram");
 
 const Message		= require("./message");
 
-const { MSG_FRAME_NODEID, MSG_FRAME_PORT } = require("./constants");
+const { MSG_FRAME_NAMESPACE, MSG_FRAME_NODEID, MSG_FRAME_PORT } = require("./constants");
 
 /**
  * UDP Discovery Server for TcpTransporter
@@ -39,8 +39,10 @@ class UdpServer extends EventEmitter {
 		this.transporter = transporter;
 		this.logger = transporter.logger;
 		this.nodeID = transporter.nodeID;
+		this.namespace = transporter.broker.namespace;
 
-		this.nodeIDBuffer = Buffer.from(this.nodeID);
+		this.nodeIDBuffer = Buffer.from(this.nodeID/* + "\0"*/);
+		this.namespaceBuffer = Buffer.from(this.namespace/* + "\0"*/);
 	}
 
 	/**
@@ -79,9 +81,23 @@ class UdpServer extends EventEmitter {
 	 * @memberof UdpServer
 	 */
 	discover() {
+		// Create an UDP beacon message
+		/*
+		let len = 4 + this.namespaceBuffer.length + this.nodeIDBuffer.length;
+		let buf = Buffer.allocUnsafe(3 + 4 + len);
+		let offset = 0;
+		offset = buf.write("MOL", offset, 3, "ascii");
+		offset = buf.writeInt32BE(len, offset);
+		offset = buf.writeInt16BE(this.opts.tcpPort, offset);
+		offset += this.namespaceBuffer.copy(buf, 7);
+		offset += this.nodeIDBuffer.copy(buf, 7);
+*/
+
 		const message = new Message();
+		message.addFrame(MSG_FRAME_NAMESPACE, this.namespaceBuffer);
 		message.addFrame(MSG_FRAME_NODEID, this.nodeIDBuffer);
 		message.addFrame(MSG_FRAME_PORT, "" + this.opts.tcpPort);
+
 
 		this.server.send(message.toBuffer(), this.opts.udpPort, this.opts.udpBroadcastAddress, (err, bytes) => {
 			if (err) {
@@ -104,11 +120,14 @@ class UdpServer extends EventEmitter {
 		//this.logger.info(`UDP message received from ${rinfo.address}. Size: ${rinfo.size}`);
 		//this.logger.info(msg.toString());
 
-		// TODO: Can it get multiple messages?
+		// TODO: Can it receive multiple messages?
 
 		try {
 			const message = Message.fromBuffer(msg);
-			this.emit("message", message, rinfo);
+			const ns = message.getFrameData(MSG_FRAME_NAMESPACE);
+			if (ns == this.namespace)
+				this.emit("message", message, rinfo);
+
 		} catch(err) {
 			this.emit("message error", err, msg, rinfo);
 		}

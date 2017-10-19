@@ -34,12 +34,14 @@ class TcpTransporter extends Transporter {
 	constructor(opts) {
 		super(opts);
 		this.opts = Object.assign({
+			udpDiscovery: true,
 			udpAddress: "0.0.0.0",
-			udpPort: 60220,
+			udpPort: 55200,
 			udpReuseAddr: true,
 			udpBroadcastAddress: "255.255.255.255",
 
-			tcpPort: null // random port
+			tcpPort: null, // random port,
+			tcpEndpoints: null, // if no UDP discover
 		}, this.opts);
 
 		this.connections = {};

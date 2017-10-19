@@ -13,7 +13,10 @@ let count = 0;
 
 const tx = {
 	logger: console,
-	nodeID: "test"
+	nodeID: "test",
+	broker: {
+		namespace: ""
+	}
 };
 
 this.tcpServer = new TcpServer(tx, opts);

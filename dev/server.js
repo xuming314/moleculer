@@ -8,7 +8,7 @@ let { MoleculerError } = require("../src/errors");
 
 // Create broker
 let broker = new ServiceBroker({
-	//namespace: "multi",
+	namespace: "multi",
 	nodeID: process.argv[2] || "server-" + process.pid,
 	transporter: "TCP",
 	//transporter: "amqp://192.168.0.181:5672",
