@@ -56,6 +56,7 @@
     "joi": "11.3.4",
     "kafka-node": "2.4.1",
     "lolex": "2.3.2",
+    "moleculer-console-tracer": "0.1.1",
     "moleculer-repl": "0.4.0",
     "mqtt": "2.16.0",
     "msgpack5": "4.0.1",

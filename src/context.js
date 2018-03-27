@@ -10,6 +10,7 @@
 const _ = require("lodash");
 const { generateToken } = require("./utils");
 const { RequestSkippedError, MaxCallLevelError } = require("./errors");
+const TraceSpan = require("./trace-span");
 
 /**
  * Context class for action calls
@@ -63,6 +64,8 @@ class Context {
 		this.startHrTime = null;
 		this.stopTime = null;
 		this.duration = 0;
+
+		this.span = null;
 
 		//this.error = null;
 		this.cachedResult = false;
@@ -254,100 +257,55 @@ class Context {
 		return this.broker.broadcast(eventName, data, groups);
 	}
 
+	startSpan(name, params) {
+		if (this.span)
+			return this.span.startSpan(name, { params });
+		// TODO return a fake span
+	}
+
 	/**
 	 * Send start event to metrics system.
-	 *
-	 * @param {boolean} emitEvent
 	 *
 	 * @private
 	 * @memberof Context
 	 */
-	_metricStart(emitEvent) {
-		this.startTime = Date.now();
-		this.startHrTime = process.hrtime();
-		this.duration = 0;
+	_metricStart() {
+		const fields = {
+			type: "call",
+			requestID: this.requestID,
+			level: this.level,
+			remoteCall: !!this.callerNodeID
+		};
 
-		if (emitEvent) {
-			let payload = {
-				id: this.id,
-				requestID: this.requestID,
-				level: this.level,
-				startTime: this.startTime,
-				remoteCall: !!this.callerNodeID
+		// Process extra metrics
+		this._processExtraMetrics(fields);
+
+		if (this.action) {
+			fields.action = {
+				name: this.action.name
 			};
-
-			// Process extra metrics
-			this._processExtraMetrics(payload);
-
-			if (this.action) {
-				payload.action = {
-					name: this.action.name
-				};
-			}
-			if (this.parentID)
-				payload.parent = this.parentID;
-
-			payload.nodeID = this.nodeID;
-			if (this.callerNodeID)
-				payload.callerNodeID = this.callerNodeID;
-
-			this.broker.emit("metrics.trace.span.start", payload);
 		}
+		if (this.parentID)
+			fields.parent = this.parentID;
+
+		fields.nodeID = this.nodeID;
+		if (this.callerNodeID)
+			fields.callerNodeID = this.callerNodeID;
+
+		this.span = new TraceSpan(this.broker, this.id, this.action.name, fields, this.parentID);
 	}
 
 	/**
 	 * Send finish event to metrics system.
 	 *
 	 * @param {Error} error
-	 * @param {boolean} emitEvent
 	 *
 	 * @private
 	 * @memberof Context
 	 */
-	_metricFinish(error, emitEvent) {
-		if (this.startHrTime) {
-			let diff = process.hrtime(this.startHrTime);
-			this.duration = (diff[0] * 1e3) + (diff[1] / 1e6); // milliseconds
-		}
-		this.stopTime = this.startTime + this.duration;
-
-		if (emitEvent) {
-			let payload = {
-				id: this.id,
-				requestID: this.requestID,
-				level: this.level,
-				startTime: this.startTime,
-				endTime: this.stopTime,
-				duration: this.duration,
-				remoteCall: !!this.callerNodeID,
-				fromCache: this.cachedResult
-			};
-
-			// Process extra metrics
-			this._processExtraMetrics(payload);
-
-			if (this.action) {
-				payload.action = {
-					name: this.action.name
-				};
-			}
-			if (this.parentID)
-				payload.parent = this.parentID;
-
-			payload.nodeID = this.nodeID;
-			if (this.callerNodeID)
-				payload.callerNodeID = this.callerNodeID;
-
-			if (error) {
-				payload.error = {
-					name: error.name,
-					code: error.code,
-					type: error.type,
-					message: error.message
-				};
-			}
-			this.broker.emit("metrics.trace.span.finish", payload);
-		}
+	_metricFinish(error) {
+		if (this.span)
+			this.span.finish(error);
 	}
 
 	/**
